@@ -1,3 +1,4 @@
+
 import os
 import sys
 import time
@@ -24,7 +25,7 @@ from google.genai import types
 
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout,
-    QHBoxLayout, QTextEdit, QSizePolicy
+    QHBoxLayout, QTextEdit, QSizePolicy, QFrame
 )
 
 from PySide6.QtCore import (
@@ -33,7 +34,7 @@ from PySide6.QtCore import (
 
 from PySide6.QtGui import (
     QPainter, QColor, QPen, QRadialGradient,
-    QFont, QPainterPath
+    QFont, QPainterPath, QConicalGradient
 )
 
 
@@ -150,19 +151,22 @@ engine.stop()
             self.join(timeout=5)
 
 
-# ---------------- ANIMATED CORE ----------------
+# ---------------- PREMIUM ANIMATED CONTROLLERS ----------------
 
 class WaveCore(QWidget):
 
-    def __init__(self, decorative=False):
+    def __init__(self, decorative=False, theme="cyan"):
         super().__init__()
 
         self.phase = 0.0
         self.rotation = 0.0
         self.mode = "IDLE"
-        self.energy = 1.0
-        self.target_energy = 1.0
+
+        self.energy = 0.85
+        self.target_energy = 0.85
+
         self.decorative = decorative
+        self.theme = theme
 
         self.setMinimumSize(0, 0)
         self.setSizePolicy(
@@ -170,56 +174,199 @@ class WaveCore(QWidget):
             QSizePolicy.Policy.Expanding
         )
 
+        self.themes = {
+            "cyan": {
+                "main": QColor(0, 210, 255),
+                "bright": QColor(90, 245, 255),
+                "dark": QColor(0, 95, 210),
+                "glow": QColor(0, 150, 255)
+            },
+            "multi": {
+                "main": QColor(0, 225, 255),
+                "bright": QColor(190, 120, 255),
+                "dark": QColor(30, 100, 255),
+                "glow": QColor(0, 160, 255)
+            },
+            "violet": {
+                "main": QColor(170, 80, 255),
+                "bright": QColor(255, 80, 220),
+                "dark": QColor(65, 90, 255),
+                "glow": QColor(140, 45, 255)
+            }
+        }
+
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.animate)
-        self.timer.start(16)
+        self.timer.start(25)
 
     def set_mode(self, mode):
+
+        if self.decorative:
+            return
+
         self.mode = mode
 
         self.target_energy = {
-            "IDLE": 0.8,
-            "LISTENING": 1.5,
-            "THINKING": 2.0,
-            "SPEAKING": 2.4,
-            "OFFLINE": 0.3
+            "IDLE": 0.85,
+            "LISTENING": 1.35,
+            "THINKING": 1.75,
+            "SPEAKING": 2.1,
+            "OFFLINE": 0.35
         }.get(mode, 1.0)
 
     def animate(self):
-        self.energy += (self.target_energy - self.energy) * 0.08
+
+        self.energy += (
+            self.target_energy - self.energy
+        ) * 0.055
 
         speed = {
             "IDLE": 0.025,
             "LISTENING": 0.055,
             "THINKING": 0.075,
-            "SPEAKING": 0.085,
-            "OFFLINE": 0.01
+            "SPEAKING": 0.095,
+            "OFFLINE": 0.012
         }.get(self.mode, 0.035)
 
         self.phase += speed
-        self.rotation = (self.rotation + 0.35) % 360
+        self.rotation = (self.rotation + 0.55) % 360
+
         self.update()
+
+    def draw_glow(self, painter, cx, cy, radius, color, alpha):
+
+        gradient = QRadialGradient(
+            QPointF(cx, cy),
+            radius
+        )
+
+        center_color = QColor(color)
+        center_color.setAlpha(alpha)
+
+        middle_color = QColor(color)
+        middle_color.setAlpha(int(alpha * 0.28))
+
+        edge_color = QColor(color)
+        edge_color.setAlpha(0)
+
+        gradient.setColorAt(0, center_color)
+        gradient.setColorAt(0.55, middle_color)
+        gradient.setColorAt(1, edge_color)
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(gradient)
+
+        painter.drawEllipse(
+            QPointF(cx, cy),
+            radius,
+            radius
+        )
+
+    def get_wave_color(self, index, alpha):
+
+        palette = self.themes[self.theme]
+
+        if self.theme == "multi":
+            hue = int(
+                (185 + index * 31 + self.phase * 17) % 360
+            )
+
+            color = QColor.fromHsv(
+                hue,
+                220,
+                255
+            )
+
+        elif self.theme == "violet":
+            colors = [
+                palette["main"],
+                palette["bright"],
+                palette["dark"]
+            ]
+
+            color = QColor(colors[index % len(colors)])
+
+        else:
+            colors = [
+                palette["main"],
+                palette["bright"],
+                palette["dark"]
+            ]
+
+            color = QColor(colors[index % len(colors)])
+
+        color.setAlpha(max(0, min(255, int(alpha))))
+        return color
 
     def paintEvent(self, event):
 
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        painter.setRenderHint(
+            QPainter.RenderHint.Antialiasing
+        )
+
+        painter.setRenderHint(
+            QPainter.RenderHint.SmoothPixmapTransform
+        )
 
         w = self.width()
         h = self.height()
+
         cx = w / 2
         cy = h / 2
 
-        scale = min(w, h) / 750.0
+        size = min(w, h)
 
-        if scale <= 0:
+        if size <= 0:
             return
 
-        # BACKGROUND GRID
+        scale = size / 590.0
 
-        painter.setPen(QPen(QColor(0, 150, 220, 13), 1))
+        palette = self.themes[self.theme]
 
-        grid_gap = max(18, int(45 * max(scale, 0.5)))
+        # PANEL BACKGROUND
+
+        panel = QRectF(
+            5,
+            5,
+            w - 10,
+            h - 10
+        )
+
+        painter.setPen(
+            QPen(
+                QColor(
+                    palette["main"].red(),
+                    palette["main"].green(),
+                    palette["main"].blue(),
+                    38
+                ),
+                1
+            )
+        )
+
+        painter.setBrush(
+            QColor(4, 12, 26, 205)
+        )
+
+        painter.drawRoundedRect(
+            panel,
+            18,
+            18
+        )
+
+        # SUBTLE BACKGROUND GRID
+
+        painter.save()
+        painter.setClipRect(panel)
+
+        grid_gap = max(15, int(35 * scale))
+
+        grid_color = QColor(palette["main"])
+        grid_color.setAlpha(12)
+
+        painter.setPen(QPen(grid_color, 1))
 
         for x in range(0, w, grid_gap):
             painter.drawLine(x, 0, x, h)
@@ -227,59 +374,73 @@ class WaveCore(QWidget):
         for y in range(0, h, grid_gap):
             painter.drawLine(0, y, w, y)
 
-        # AMBIENT GLOW
+        painter.restore()
 
-        glow_radius = 330 * scale
+        # AMBIENT LIGHT
 
-        glow = QRadialGradient(QPointF(cx, cy), glow_radius)
-        glow.setColorAt(0, QColor(0, 160, 255, 48))
-        glow.setColorAt(0.5, QColor(0, 90, 180, 18))
-        glow.setColorAt(1, QColor(0, 0, 0, 0))
-
-        painter.setBrush(glow)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(
-            QPointF(cx, cy),
-            glow_radius,
-            glow_radius
+        self.draw_glow(
+            painter,
+            cx,
+            cy,
+            245 * scale,
+            palette["glow"],
+            32
         )
 
-        # OUTER ROTATING HUD RINGS
+        self.draw_glow(
+            painter,
+            cx,
+            cy,
+            145 * scale,
+            palette["main"],
+            25
+        )
 
-        for ring in range(4):
+        # OUTER RINGS
 
-            radius = (255 + ring * 15) * scale
+        for ring in range(5):
+
+            radius = (222 + ring * 13) * scale
 
             rect = QRectF(
                 cx - radius,
                 cy - radius,
                 radius * 2,
                 radius * 2
-            )
-
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(
-                QPen(
-                    QColor(0, 200, 255, max(35, 105 - ring * 18)),
-                    max(0.7, 1.5 * scale)
-                )
             )
 
             direction = 1 if ring % 2 == 0 else -1
-            start = int(self.rotation * direction * 16)
 
-            for i in range(6):
+            start = int(
+                (self.rotation * direction + ring * 37) * 16
+            )
+
+            color = self.get_wave_color(
+                ring,
+                115 - ring * 13
+            )
+
+            pen = QPen(
+                color,
+                max(0.7, 1.5 * scale)
+            )
+
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+
+            for section in range(8):
+
                 painter.drawArc(
                     rect,
-                    start + i * 60 * 16,
-                    42 * 16
+                    start + section * 45 * 16,
+                    27 * 16
                 )
 
-        # INNER TECHNICAL RINGS
+        # ROTATING TECHNICAL CIRCLES
 
-        for ring in range(3):
+        for ring in range(4):
 
-            radius = (185 + ring * 15) * scale
+            radius = (165 + ring * 16) * scale
 
             rect = QRectF(
                 cx - radius,
@@ -288,41 +449,100 @@ class WaveCore(QWidget):
                 radius * 2
             )
 
+            direction = -1 if ring % 2 else 1
+
+            painter.save()
+
+            painter.translate(cx, cy)
+            painter.rotate(
+                self.rotation * direction * (1 + ring * 0.13)
+            )
+            painter.translate(-cx, -cy)
+
+            color = self.get_wave_color(
+                ring + 1,
+                100 - ring * 13
+            )
+
             painter.setPen(
                 QPen(
-                    QColor(0, 190, 255, 75),
-                    max(0.6, 1.1 * scale)
+                    color,
+                    max(0.7, 1.2 * scale),
+                    Qt.PenStyle.DashLine
                 )
             )
 
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(rect)
 
-        # ORGANIC REVOLVING WAVES
+            painter.restore()
 
-        for ring in range(6):
+        # ROTATING TICK MARKS
 
-            base_radius = (105 + ring * 19) * scale
+        for i in range(120):
+
+            angle = math.radians(
+                i * 3 + self.rotation * (-1 if i % 2 else 1)
+            )
+
+            inner = 192 * scale
+            outer = (200 if i % 5 == 0 else 196) * scale
+
+            x1 = cx + math.cos(angle) * inner
+            y1 = cy + math.sin(angle) * inner
+
+            x2 = cx + math.cos(angle) * outer
+            y2 = cy + math.sin(angle) * outer
+
+            color = self.get_wave_color(
+                i,
+                155 if i % 5 == 0 else 75
+            )
+
+            painter.setPen(
+                QPen(
+                    color,
+                    max(0.7, 1.5 * scale)
+                )
+            )
+
+            painter.drawLine(
+                QPointF(x1, y1),
+                QPointF(x2, y2)
+            )
+
+        # ORGANIC ROTATING ENERGY WAVES
+
+        for ring in range(7):
+
+            base_radius = (82 + ring * 14) * scale
+
             path = QPainterPath()
 
             for i in range(361):
 
-                angle = math.radians(i)
+                angle = math.radians(
+                    i + self.rotation * (1 if ring % 2 == 0 else -1)
+                )
 
                 wave1 = math.sin(
-                    angle * 4 + self.phase * 2 + ring * 0.8
-                ) * 6
+                    angle * 4 + self.phase * 2.2 + ring
+                ) * 5.5
 
                 wave2 = math.cos(
-                    angle * 7 - self.phase * 1.7 + ring
+                    angle * 7 - self.phase * 1.7 + ring * 0.8
                 ) * 3.5
 
                 wave3 = math.sin(
-                    angle * 13 + self.phase * 3
-                ) * 1.8
+                    angle * 12 + self.phase * 3.1
+                ) * 2.0
+
+                wave4 = math.cos(
+                    angle * 2 - self.phase * 1.2
+                ) * 2.0
 
                 radius = base_radius + (
-                    wave1 + wave2 + wave3
+                    wave1 + wave2 + wave3 + wave4
                 ) * self.energy * scale
 
                 x = cx + math.cos(angle) * radius
@@ -333,45 +553,111 @@ class WaveCore(QWidget):
                 else:
                     path.lineTo(x, y)
 
-            alpha = max(25, 175 - ring * 23)
+            path.closeSubpath()
+
+            color = self.get_wave_color(
+                ring,
+                165 - ring * 14
+            )
 
             painter.setPen(
                 QPen(
-                    QColor(0, 215, 255, alpha),
-                    max(0.7, 1.8 * scale)
+                    color,
+                    max(0.8, 1.7 * scale)
                 )
             )
 
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(path)
 
-        # RADIAL ENERGY BARS
+        # SECONDARY ENERGY WAVE
 
-        for i in range(100):
+        for ring in range(3):
 
-            angle = math.radians(i * 3.6)
+            radius = (105 + ring * 17) * scale
 
-            pulse = (
-                math.sin(self.phase * 2.5 + i * 0.3) * 8
-                + math.cos(self.phase * 1.8 - i * 0.6) * 6
+            rect = QRectF(
+                cx - radius,
+                cy - radius,
+                radius * 2,
+                radius * 2
             )
 
-            inner = 78 * scale
-            outer = inner + (5 + abs(pulse) * self.energy) * scale
+            painter.save()
+
+            painter.translate(cx, cy)
+            painter.rotate(
+                -self.rotation * (1.3 + ring * 0.3)
+            )
+            painter.translate(-cx, -cy)
+
+            color = self.get_wave_color(
+                ring + 2,
+                135
+            )
+
+            painter.setPen(
+                QPen(
+                    color,
+                    max(0.8, 1.4 * scale)
+                )
+            )
+
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+
+            painter.drawArc(
+                rect,
+                20 * 16,
+                245 * 16
+            )
+
+            painter.drawArc(
+                rect,
+                205 * 16,
+                105 * 16
+            )
+
+            painter.restore()
+
+        # RADIAL ENERGY BARS
+
+        for i in range(96):
+
+            angle = math.radians(
+                i * 3.75 + self.rotation * 0.35
+            )
+
+            pulse = (
+                math.sin(self.phase * 2.5 + i * 0.31) * 7
+                + math.cos(self.phase * 1.8 - i * 0.55) * 5
+            )
+
+            inner = 65 * scale
+
+            outer = inner + (
+                6 + abs(pulse) * self.energy
+            ) * scale
 
             x1 = cx + math.cos(angle) * inner
             y1 = cy + math.sin(angle) * inner
+
             x2 = cx + math.cos(angle) * outer
             y2 = cy + math.sin(angle) * outer
 
-            color = (
-                QColor(0, 240, 255, 220)
-                if i % 3 == 0
-                else QColor(0, 155, 235, 140)
+            color = self.get_wave_color(
+                i,
+                210 if i % 3 == 0 else 125
             )
 
-            pen = QPen(color, max(0.7, 2 * scale))
-            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen = QPen(
+                color,
+                max(0.7, 1.8 * scale)
+            )
+
+            pen.setCapStyle(
+                Qt.PenCapStyle.RoundCap
+            )
+
             painter.setPen(pen)
 
             painter.drawLine(
@@ -379,20 +665,52 @@ class WaveCore(QWidget):
                 QPointF(x2, y2)
             )
 
-        # CENTRAL CORE
+        # CENTRAL CORE GLOW
 
-        core_radius = 65 * scale
+        self.draw_glow(
+            painter,
+            cx,
+            cy,
+            75 * scale,
+            palette["main"],
+            85
+        )
 
-        core = QRadialGradient(QPointF(cx, cy), core_radius)
-        core.setColorAt(0, QColor(150, 245, 255, 145))
-        core.setColorAt(0.55, QColor(0, 170, 240, 65))
-        core.setColorAt(1, QColor(0, 40, 100, 10))
+        # CENTRAL CORE RING
 
-        painter.setBrush(core)
+        core_radius = 48 * scale
+
+        core_gradient = QRadialGradient(
+            QPointF(cx, cy),
+            core_radius
+        )
+
+        core_gradient.setColorAt(
+            0,
+            QColor(160, 245, 255, 150)
+        )
+
+        core_gradient.setColorAt(
+            0.35,
+            QColor(
+                palette["main"].red(),
+                palette["main"].green(),
+                palette["main"].blue(),
+                95
+            )
+        )
+
+        core_gradient.setColorAt(
+            1,
+            QColor(2, 20, 60, 15)
+        )
+
+        painter.setBrush(core_gradient)
+
         painter.setPen(
             QPen(
-                QColor(0, 225, 255, 230),
-                max(0.7, 2 * scale)
+                palette["bright"],
+                max(1, 2 * scale)
             )
         )
 
@@ -402,13 +720,46 @@ class WaveCore(QWidget):
             core_radius
         )
 
+        # INNER ROTATING CORE RING
+
+        painter.save()
+
+        painter.translate(cx, cy)
+        painter.rotate(-self.rotation * 2)
+        painter.translate(-cx, -cy)
+
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        painter.setPen(
+            QPen(
+                palette["bright"],
+                max(0.8, 1.4 * scale)
+            )
+        )
+
+        painter.drawArc(
+            QRectF(
+                cx - 37 * scale,
+                cy - 37 * scale,
+                74 * scale,
+                74 * scale
+            ),
+            20 * 16,
+            255 * 16
+        )
+
+        painter.restore()
+
         # CORE LABEL
 
-        painter.setPen(QColor(190, 250, 255))
+        painter.setPen(
+            QColor(235, 252, 255)
+        )
+
         painter.setFont(
             QFont(
                 "Segoe UI",
-                max(7, int(25 * scale)),
+                max(8, int(20 * scale)),
                 QFont.Weight.Bold
             )
         )
@@ -416,25 +767,107 @@ class WaveCore(QWidget):
         painter.drawText(
             QRectF(
                 cx - core_radius,
-                cy - 15 * scale,
+                cy - 14 * scale,
                 core_radius * 2,
-                30 * scale
+                28 * scale
             ),
             Qt.AlignmentFlag.AlignCenter,
-            "SRI" if not self.decorative else " "
+            "SRI" if not self.decorative else "CORE"
         )
 
-        # BOTTOM STATUS ONLY — NO CLOCK OR DATE
+        # CONTROLLER LABEL
+
+        if self.decorative:
+
+            label = (
+                "NEURAL LINK"
+                if self.theme == "cyan"
+                else "ENERGY MATRIX"
+            )
+
+        else:
+            label = "SRI NEURAL CORE"
+
+        painter.setPen(
+            QColor(
+                palette["bright"].red(),
+                palette["bright"].green(),
+                palette["bright"].blue(),
+                175
+            )
+        )
+
+        painter.setFont(
+            QFont(
+                "Consolas",
+                max(7, int(9 * scale))
+            )
+        )
+
+        painter.drawText(
+            QRectF(
+                cx - 100 * scale,
+                cy + 61 * scale,
+                200 * scale,
+                18 * scale
+            ),
+            Qt.AlignmentFlag.AlignCenter,
+            label
+        )
+
+        # STATUS
 
         if not self.decorative:
-            painter.setPen(QColor(0, 200, 255, 170))
-            painter.setFont(QFont("Consolas", max(7, int(10 * scale))))
+
+            painter.setPen(
+                QColor(180, 235, 255, 190)
+            )
+
+            painter.setFont(
+                QFont(
+                    "Consolas",
+                    max(7, int(9 * scale))
+                )
+            )
 
             painter.drawText(
-                QRectF(cx - 200 * scale, h - 25 * scale,
-                       400 * scale, 20 * scale),
+                QRectF(
+                    cx - 150 * scale,
+                    h - 28 * scale,
+                    300 * scale,
+                    18 * scale
+                ),
                 Qt.AlignmentFlag.AlignCenter,
                 "SRI NEURAL CORE // " + self.mode
+            )
+
+        # PANEL CORNER DETAILS
+
+        painter.setPen(
+            QPen(
+                palette["main"],
+                max(0.8, 1.2 * scale)
+            )
+        )
+
+        corner = 15 * scale
+        margin = 12 * scale
+
+        for x, y, sx, sy in [
+            (margin, margin, 1, 1),
+            (w - margin, margin, -1, 1),
+            (margin, h - margin, 1, -1),
+            (w - margin, h - margin, -1, -1)
+        ]:
+
+            painter.drawLine(
+                QPointF(x, y),
+                QPointF(x + corner * sx, y)
+            )
+
+            painter.drawLine(
+                QPointF(x, y),
+                QPointF(x, y + corner * sy)
             )
 
 
@@ -859,61 +1292,112 @@ class SriWindow(QWidget):
         super().__init__()
 
         self.setWindowTitle("SRI - Personal AI Assistant")
-        self.setMinimumSize(900, 650)
+        self.setMinimumSize(1050, 720)
 
         self.setStyleSheet("""
             QWidget {
-                background-color: #030912;
-                color: #b8eaff;
+                background-color: #020711;
+                color: #c8edff;
+            }
+
+            QFrame#mainPanel {
+                background-color: rgba(5, 15, 31, 230);
+                border: 1px solid rgba(0, 180, 255, 65);
+                border-radius: 14px;
+            }
+
+            QTextEdit {
+                background-color: rgba(3, 12, 25, 245);
+                color: #c8edff;
+                border: 1px solid rgba(0, 180, 255, 100);
+                border-radius: 10px;
+                padding: 12px;
+                font-family: Segoe UI;
+                font-size: 13px;
             }
         """)
 
         main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(22, 14, 22, 14)
-        main_layout.setSpacing(8)
+        main_layout.setContentsMargins(18, 12, 18, 12)
+        main_layout.setSpacing(9)
 
         # HEADER
 
+        header = QVBoxLayout()
+        header.setSpacing(2)
+
         title = QLabel("S R I")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setFont(QFont("Segoe UI", 28, QFont.Weight.Bold))
-        title.setStyleSheet("color: #00dfff;")
-
-        subtitle = QLabel("PERSONAL AI ASSISTANT")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setStyleSheet(
-            "color: #75bcd5; font-size: 11px; letter-spacing: 4px;"
+        title.setFont(
+            QFont("Segoe UI", 28, QFont.Weight.Bold)
+        )
+        title.setStyleSheet(
+            "color: #66eaff; background: transparent; letter-spacing: 8px;"
         )
 
-        main_layout.addWidget(title)
-        main_layout.addWidget(subtitle)
+        subtitle = QLabel(
+            "PERSONAL ARTIFICIAL INTELLIGENCE SYSTEM"
+        )
 
-        # THREE ANIMATED CORES
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle.setStyleSheet("""
+            color: #638da9;
+            background: transparent;
+            font-size: 10px;
+            letter-spacing: 4px;
+        """)
+
+        header.addWidget(title)
+        header.addWidget(subtitle)
+
+        main_layout.addLayout(header)
+
+        # THREE CONTROLLER PANELS
 
         core_layout = QHBoxLayout()
-        core_layout.setSpacing(8)
+        core_layout.setSpacing(12)
 
-        self.left_core = WaveCore(decorative=True)
-        self.main_core = WaveCore()
-        self.right_core = WaveCore(decorative=True)
+        self.left_core = WaveCore(
+            decorative=True,
+            theme="cyan"
+        )
 
-        self.left_core.setMinimumSize(150, 150)
-        self.right_core.setMinimumSize(150, 150)
-        self.main_core.setMinimumSize(350, 350)
+        self.main_core = WaveCore(
+            decorative=False,
+            theme="multi"
+        )
+
+        self.right_core = WaveCore(
+            decorative=True,
+            theme="violet"
+        )
+
+        self.left_core.setMinimumSize(190, 230)
+        self.main_core.setMinimumSize(300, 330)
+        self.right_core.setMinimumSize(190, 230)
 
         core_layout.addWidget(self.left_core, 1)
-        core_layout.addWidget(self.main_core, 2)
+        core_layout.addWidget(self.main_core, 1)
         core_layout.addWidget(self.right_core, 1)
 
         main_layout.addLayout(core_layout, 1)
 
-        # STATUS
+        # SYSTEM STATUS
 
         self.status = QLabel("● SYSTEM STARTING")
-        self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status.setStyleSheet(
-            "color: #00ffbd; font-size: 14px; font-weight: bold;"
+
+        self.status.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
         )
+
+        self.status.setStyleSheet("""
+            color: #00ffbd;
+            background: transparent;
+            font-size: 14px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            padding: 4px;
+        """)
 
         main_layout.addWidget(self.status)
 
@@ -924,27 +1408,25 @@ class SriWindow(QWidget):
         self.conversation.setMinimumHeight(100)
         self.conversation.setMaximumHeight(155)
 
-        self.conversation.setStyleSheet("""
-            QTextEdit {
-                background-color: rgba(5, 20, 36, 235);
-                color: #b8eaff;
-                border: 1px solid #087ca5;
-                border-radius: 10px;
-                padding: 12px;
-                font-family: Segoe UI;
-                font-size: 13px;
-            }
-        """)
-
         main_layout.addWidget(self.conversation)
 
         # FOOTER
 
-        self.footer = QLabel("AWAITING COMMAND")
-        self.footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.footer.setStyleSheet(
-            "color: #668ba5; font-size: 10px; letter-spacing: 2px;"
+        self.footer = QLabel(
+            "SRI SYSTEM // INITIALIZING NEURAL CORE"
         )
+
+        self.footer.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+
+        self.footer.setStyleSheet("""
+            color: #668ba5;
+            background: transparent;
+            font-size: 10px;
+            letter-spacing: 3px;
+            padding: 4px;
+        """)
 
         main_layout.addWidget(self.footer)
 
@@ -954,16 +1436,22 @@ class SriWindow(QWidget):
 
         self.assistant = SriAssistant()
 
-        self.assistant.status_changed.connect(self.update_status)
-        self.assistant.message_received.connect(self.add_message)
+        self.assistant.status_changed.connect(
+            self.update_status
+        )
+
+        self.assistant.message_received.connect(
+            self.add_message
+        )
 
         self.assistant.start()
 
     def update_status(self, mode):
 
+        # Only the central controller follows SRI status.
+        # Side controllers remain decorative.
+
         self.main_core.set_mode(mode)
-        self.left_core.set_mode(mode)
-        self.right_core.set_mode(mode)
 
         self.status.setText("● " + mode)
 
@@ -978,17 +1466,28 @@ class SriWindow(QWidget):
         color = colors.get(mode, "#00dfff")
 
         self.status.setStyleSheet(
-            "color: " + color + "; font-size: 14px; font-weight: bold;"
+            "color: " + color +
+            "; background: transparent;"
+            "font-size: 14px;"
+            "font-weight: bold;"
+            "letter-spacing: 2px;"
+            "padding: 4px;"
         )
 
-        self.footer.setText("SRI SYSTEM // " + mode)
+        self.footer.setText(
+            "SRI NEURAL SYSTEM // " + mode
+        )
 
     def add_message(self, sender, message):
 
         safe_sender = html.escape(str(sender))
         safe_message = html.escape(str(message))
 
-        sender_color = "#00dfff" if sender == "SRI" else "#00ffbd"
+        sender_color = (
+            "#00dfff"
+            if sender == "SRI"
+            else "#00ffbd"
+        )
 
         self.conversation.append(
             f"<b style='color:{sender_color}'>{safe_sender}:</b> "
@@ -1010,7 +1509,7 @@ if __name__ == "__main__":
 
     window = SriWindow()
 
-    # Maximized window with Windows title bar and window controls.
+    # Maximized window with native Windows title bar.
     window.showMaximized()
 
     sys.exit(app.exec())
